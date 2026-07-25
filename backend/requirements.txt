@@ -12,11 +12,16 @@ greenlet>=3.1
 
 # --- Validation / settings ---
 pydantic>=2.9,<3.0
+pydantic[email]>=2.9,<3.0
 pydantic-settings>=2.5,<3.0
 
 # --- Auth ---
 python-jose[cryptography]>=3.3,<3.4
 passlib[bcrypt]>=1.7,<1.8
+# passlib 1.7.4 (last released 2020, unmaintained) breaks against bcrypt>=4.1's
+# backend self-test (ValueError during set_backend, not a real password-length
+# issue) — pin bcrypt to the last version passlib's detection logic works with.
+bcrypt>=4.0,<4.1
 slowapi>=0.1.9
 
 # --- Async job queue ---
