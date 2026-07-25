@@ -1,0 +1,26 @@
+# Local development override. CLAUDE.md's `make dev` workflow runs only
+# postgres + redis in Docker and runs backend/frontend natively for fast
+# hot-reload iteration — this file is for the less common case of running the
+# FULL stack in Docker during development, with debug-friendly settings that
+# differ from the production-leaning defaults in docker-compose.yml.
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+
+services:
+  backend:
+    environment:
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
+    # No mem_limit override here — production caps (2g) can be too tight for
+    # comfortable local debugging (profilers, extra tooling) on a dev machine.
+    mem_limit: 4g
+
+  worker:
+    environment:
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
+    mem_limit: 4g
+
+  frontend:
+    environment:
+      NODE_ENV: development
