@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #0a0a0a;
+  --card: #111111;
+  --card-elevated: #1a1a1a;
+  --accent: #3b82f6;
+  --degraded: #f59e0b;
+  --error: #ef4444;
+}
+
+body {
+  background-color: var(--background);
+  color: #e5e7eb;
+}
+
+/* Full print stylesheet (nav/sidebar hiding, report expansion, EVALON header,
+   page breaks) lands in Phase 7 alongside PrintableReport.tsx. */

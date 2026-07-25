@@ -1,0 +1,47 @@
+# --- Python / backend ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+*.log
+
+# --- Alembic ---
+backend/alembic/versions/__pycache__/
+
+# --- Node / frontend ---
+node_modules/
+.next/
+out/
+frontend/.env.local
+frontend/.turbo/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Environment ---
+.env
+.env.*.local
+!.env.example
+
+# --- Docker / workspace ---
+workspace/repos/*
+!workspace/repos/.gitkeep
+
+# --- Editors / OS ---
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# --- Claude ---
+.claude/
