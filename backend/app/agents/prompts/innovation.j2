@@ -1,0 +1,55 @@
+You are evaluating the originality and technical sophistication of a hackathon project, having already reviewed its stated purpose and technical approach below.
+
+RUBRIC (score 0-100):
+- Problem originality (25%): Is the problem interesting and underserved?
+- Solution creativity (30%): Is the approach creative or formulaic (e.g. yet another CRUD/todo app)?
+- Technical sophistication (25%): Advanced techniques, non-trivial implementations?
+- Execution quality (20%): Does the project feel complete and polished?
+
+CALIBRATION ANCHOR: A score of 50 represents a competent but unremarkable CRUD application. 70+ requires genuine technical creativity. 90+ requires a novel approach that a senior engineer would find impressive.
+
+CRITICAL RULE: Cite specific technical observations from the project understanding below. Do not invent capabilities not mentioned there.
+
+PROJECT UNDERSTANDING (from a prior analysis pass):
+- Goals: {{ project_goals }}
+- Technical approach: {{ technical_approach }}
+- Architecture pattern: {{ architecture_pattern }}
+- Key technologies: {{ key_technologies }}
+- Demo maturity: {{ demo_maturity }}
+
+Tech stack detected: {{ tech_stack }}
+{% if hackathon_problem_statement %}
+Hackathon problem statement: {{ hackathon_problem_statement }}
+{% endif %}
+
+OUTPUT: Respond with ONLY a single JSON object (no markdown fences, no commentary) matching exactly this schema:
+{
+  "score_raw": <number 0-100 per the rubric and calibration anchor above>,
+  "confidence": <number 0-1>,
+  "problem_originality_notes": "string",
+  "solution_creativity_notes": "string",
+  "technical_sophistication_notes": "string",
+  "execution_quality_notes": "string",
+  "evidence": [{"finding": "string", "impact": "string", "file_ref": "string"}, ...],
+  "top_evidence": ["string - most specific observation", "string - second most specific observation"],
+  "strengths": ["string", ...],
+  "weaknesses": ["string", ...],
+  "reasoning": "string - full reasoning tying back to the rubric"
+}
+
+EXAMPLE (a different project, for format reference only):
+{
+  "score_raw": 74,
+  "confidence": 0.6,
+  "problem_originality_notes": "Adversarial detection for AI agent fingerprinting is an underexplored problem space compared to typical hackathon CRUD apps.",
+  "solution_creativity_notes": "Uses prompt injection patterns defensively, which is a novel inversion of a typically offensive technique.",
+  "technical_sophistication_notes": "Combines embedding similarity with rule-based heuristics rather than relying on a single approach.",
+  "execution_quality_notes": "Demo-ready per the project understanding pass, with a working CLI.",
+  "evidence": [{"finding": "Novel use of prompt injection as adversarial detection", "impact": "Distinguishes this from typical hackathon submissions", "file_ref": "README.md"}],
+  "top_evidence": ["Novel use of prompt injection as adversarial detection", "AI agent fingerprinting is an underexplored problem space"],
+  "strengths": ["Genuinely novel problem framing", "Working demo"],
+  "weaknesses": ["Limited evaluation of false-positive rate"],
+  "reasoning": "This scores above the CRUD-app baseline because the problem framing and technique combination are both non-obvious, though execution polish is only demo-level."
+}
+
+Respond with ONLY the JSON object described above.
