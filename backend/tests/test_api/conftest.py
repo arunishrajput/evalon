@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from app.core.rate_limit import limiter
 from app.database import engine
-from app.dependencies import get_redis
+from app.dependencies import get_model_queue_manager, get_redis
 from app.main import app
 
 _TABLES_TO_CLEAN = [
@@ -33,13 +33,18 @@ async def clean_db():
     # and the cached get_redis() client are module-level singletons created
     # once at import time — any pooled connections from a previous test's
     # (now-closed) loop are unusable here. Disposing/clearing first forces
-    # fresh connections bound to the current loop.
+    # fresh connections bound to the current loop. get_model_queue_manager()
+    # is also @lru_cache'd and captures whichever get_redis() client existed
+    # at its first call, so it must be cleared in lockstep — otherwise the
+    # first test to touch a model-queue-aware endpoint (chatbot) pins every
+    # later test to that first test's already-closed Redis connection.
     await engine.dispose()
     try:
         await get_redis().aclose()
     except RuntimeError:
         pass  # previous loop already closed; nothing to clean up
     get_redis.cache_clear()
+    get_model_queue_manager.cache_clear()
 
     async with engine.begin() as conn:
         await conn.execute(text(f"TRUNCATE {', '.join(_TABLES_TO_CLEAN)} CASCADE"))

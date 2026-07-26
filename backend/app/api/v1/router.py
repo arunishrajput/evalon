@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     admin,
     auth,
+    chat,
     comparison,
     dashboard,
     evaluations,
@@ -25,3 +26,4 @@ api_router.include_router(rankings.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(comparison.router)
 api_router.include_router(export.router)
+api_router.include_router(chat.router)

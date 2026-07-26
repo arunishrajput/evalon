@@ -7,6 +7,8 @@ embedder, and the chatbot must go through it rather than hitting Ollama
 themselves (spec's Model Queue Standards)."""
 
 import asyncio
+import json
+from typing import AsyncIterator
 
 import httpx
 
@@ -56,6 +58,39 @@ class LLMProvider:
         if not response_text:
             raise ModelUnavailableError("Ollama returned an empty response")
         return response_text
+
+    async def generate_stream(self, prompt: str, system: str, *, timeout: int = 120) -> AsyncIterator[str]:
+        """Token-by-token streaming generate call for the mentor chatbot
+        (spec Section 9's SSE token streaming). Assumes the inference lock is
+        already held by the caller. Yields response tokens as they arrive;
+        raises ModelUnavailableError (never anything else) on any failure,
+        matching generate()'s contract."""
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "system": system,
+            "stream": True,
+            "keep_alive": "10m",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream(
+                    "POST", f"{self.settings.ollama_base_url}/api/generate", json=payload
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line:
+                            continue
+                        chunk = json.loads(line)
+                        token = chunk.get("response", "")
+                        if token:
+                            yield token
+                        if chunk.get("done"):
+                            return
+        except httpx.HTTPError as exc:
+            raise ModelUnavailableError(f"Ollama streaming generate failed: {exc}") from exc
+        except json.JSONDecodeError as exc:
+            raise ModelUnavailableError(f"Ollama returned malformed streaming output: {exc}") from exc
 
     async def embed(self, text: str) -> list[float]:
         """Assumes the embedding lock is already held by the caller."""
