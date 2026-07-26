@@ -46,6 +46,12 @@ jinja2>=3.1,<3.2
 
 # --- PDF generation ---
 weasyprint>=62.0,<63.0
+# weasyprint 62.x's PDF stream backend subclasses pydyf.Stream and calls
+# super().transform(...) — pydyf>=0.11 removed that method, so an
+# unconstrained pydyf resolves to an incompatible version and every PDF
+# export crashes with "AttributeError: 'super' object has no attribute
+# 'transform'". Pin to the version weasyprint 62.x was actually built against.
+pydyf==0.10.0
 
 # --- Utilities ---
 python-dotenv>=1.0,<1.1
