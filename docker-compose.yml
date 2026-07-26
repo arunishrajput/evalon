@@ -12,6 +12,7 @@ services:
     image: pgvector/pgvector:pg16
     container_name: evalon_postgres
     restart: unless-stopped
+    mem_limit: 1g
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-evalon}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-evalon}
@@ -33,6 +34,7 @@ services:
     image: redis:7-alpine
     container_name: evalon_redis
     restart: unless-stopped
+    mem_limit: 512m
     volumes:
       - evalon_redis_data:/data
     ports:
@@ -146,6 +148,7 @@ services:
       dockerfile: Dockerfile
     container_name: evalon_frontend
     restart: unless-stopped
+    mem_limit: 1g
     env_file: .env
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
@@ -164,6 +167,7 @@ services:
     image: nginx:alpine
     container_name: evalon_nginx
     restart: unless-stopped
+    mem_limit: 128m
     depends_on:
       - backend
       - frontend
