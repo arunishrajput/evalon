@@ -1,5 +1,4 @@
-"""ARQ job task definitions. generate_embeddings is added in Phase 6 once
-the embedding pipeline exists."""
+"""ARQ job task definitions."""
 
 import logging
 import time
@@ -11,9 +10,12 @@ from sqlalchemy import select
 
 from app.agents.llm_provider import LLMProvider
 from app.config import get_settings
-from app.core.exceptions import RepositoryIngestionError
+from app.core.exceptions import ModelUnavailableError, RepositoryIngestionError
 from app.database import async_session_factory
 from app.dependencies import get_model_queue_manager, get_redis
+from app.embedding.chunker import build_chunks
+from app.embedding.context_cache import load_embedding_context
+from app.embedding.embedder import embed_and_store_chunks
 from app.models.criterion import Criterion
 from app.models.submission import Submission, SubmissionStatus
 from app.orchestration.graph import build_graph
@@ -215,9 +217,9 @@ async def run_evaluation_pipeline(ctx: dict, submission_id: str) -> None:
 
     # Deviates from the spec's literal linear job chain (run_evaluation_pipeline
     # -> generate_embeddings -> recompute_rankings -> update_hackathon_stats):
-    # rankings/stats must never be blocked by embeddings (Phase 6) being slow,
-    # absent, or failed — they're dispatched directly here, independent of
-    # whether embedding generation later succeeds.
+    # rankings/stats must never be blocked by embeddings being slow, absent, or
+    # failed — all three are dispatched directly here, independent of each other.
+    await ctx["redis"].enqueue_job("generate_embeddings", submission_id)
     await ctx["redis"].enqueue_job("recompute_rankings", str(hackathon_id))
     await ctx["redis"].enqueue_job("update_hackathon_stats", str(hackathon_id))
 
@@ -232,3 +234,35 @@ async def update_hackathon_stats(ctx: dict, hackathon_id: str) -> None:
     async with async_session_factory() as db:
         await upsert_hackathon_stats(db, uuid.UUID(hackathon_id))
         await db.commit()
+
+
+async def generate_embeddings(ctx: dict, submission_id: str) -> None:
+    """Stage 7 (spec Section 7): chunks the repo + evaluation context cached
+    by save_results_node and embeds them via nomic-embed-text. A missing
+    cache entry, a lock timeout, or an Ollama outage are all treated the
+    same way — log a warning and leave the mentor chatbot unavailable for
+    this submission — never a crash, never a retryable failure that blocks
+    anything else in the pipeline (P3)."""
+    redis = get_redis()
+    model_queue = get_model_queue_manager()
+    settings = get_settings()
+
+    embedding_context = await load_embedding_context(redis, submission_id)
+    if embedding_context is None:
+        logger.warning("generate_embeddings: no cached context for submission %s — skipping", submission_id)
+        return
+
+    chunks = build_chunks(embedding_context)
+    async with async_session_factory() as db:
+        try:
+            count = await embed_and_store_chunks(
+                db=db, llm=LLMProvider(settings), model_queue=model_queue,
+                submission_id=submission_id, chunks=chunks,
+            )
+        except ModelUnavailableError as exc:
+            logger.warning("generate_embeddings: model unavailable for submission %s (%s) — skipping", submission_id, exc)
+            return
+        await db.commit()
+
+    await ctx["redis"].enqueue_job("update_hackathon_stats", str(embedding_context.repo_context.hackathon_id))
+    logger.info("generate_embeddings: stored %d chunks for submission %s", count, submission_id)

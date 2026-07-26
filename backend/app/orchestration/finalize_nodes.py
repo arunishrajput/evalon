@@ -7,6 +7,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+from app.embedding.context_cache import cache_embedding_context
 from app.models.agent_result import AgentResult as AgentResultModel
 from app.models.evaluation import Evaluation, EvaluationStatus
 from app.models.submission import Submission, SubmissionStatus
@@ -138,6 +139,13 @@ async def save_results_node(state: EvaluationState, ctx: PipelineContext) -> Eva
     submission.evaluation_completed_at = datetime.now(timezone.utc)
 
     await ctx.db.commit()
+
+    if evaluation_status != EvaluationStatus.FAILED:
+        # cleanup_node (next in the graph) deletes the cloned repo from disk;
+        # generate_embeddings runs as a separate ARQ job/process afterward and
+        # has no access to this run's in-memory RepoContext, so it must be
+        # captured here first (see embedding/context_cache.py).
+        await cache_embedding_context(ctx.redis, state["submission_id"], state["repo_context"], state["report"])
 
     if evaluation_status == EvaluationStatus.FAILED:
         await emit_progress(

@@ -7,6 +7,7 @@ from arq.connections import RedisSettings
 
 from app.config import get_settings
 from app.jobs.tasks import (
+    generate_embeddings,
     ingest_repository,
     ping,
     recompute_rankings,
@@ -24,6 +25,7 @@ class WorkerSettings:
         run_evaluation_pipeline,
         recompute_rankings,
         update_hackathon_stats,
+        generate_embeddings,
     ]
     redis_settings = RedisSettings(host=settings.redis_host, port=settings.redis_port)
     max_jobs = 3  # prevents simultaneous model loads (see ModelQueueManager)
