@@ -106,6 +106,13 @@ async def seed() -> None:
     logger.info("Try submitting one of these to '%s':", HACKATHON_TITLE)
     for repo in DEMO_REPOS:
         logger.info("  - %s", repo)
+    logger.info("")
+    logger.info(
+        "Note: vercel/next.js is ~2.4GB — it will clone fully, then be cleanly "
+        "rejected by the default MAX_REPO_SIZE_MB=50 limit (or hit "
+        "CLONE_TIMEOUT_SECONDS first). Fine to demonstrate that rejection is "
+        "clean, not a crash — but for a snappy live demo, prefer a smaller repo."
+    )
 
 
 if __name__ == "__main__":

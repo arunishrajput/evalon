@@ -159,7 +159,17 @@ error reaching the screen.
 3. In a second browser (or incognito window), sign in as
    `participant1@evalon.dev`, join the hackathon, and submit one of the
    three suggested repo URLs the seed script printed (e.g.
-   `https://github.com/tiangolo/fastapi`).
+   `https://github.com/tiangolo/fastapi` — note this org has since moved
+   to `fastapi/fastapi`; GitHub redirects the clone transparently, so the
+   original URL still works). **For a live demo, avoid
+   `vercel/next.js`** — it's ~2.4GB, well over the default
+   `MAX_REPO_SIZE_MB=50`, so it clones fully and then gets cleanly
+   rejected (or hits `CLONE_TIMEOUT_SECONDS` first) rather than failing
+   fast. That rejection is itself a fine thing to demonstrate
+   deliberately ("here's what a clean failure looks like"), just not
+   something you want to hit by surprise mid-demo. Any small-to-medium
+   public repo works for the happy path — the three suggested URLs are
+   spec-mandated defaults, not the only valid choices.
 4. Watch the admin dashboard update to `1 submission | 0 completed | 1
    queued` — **no page refresh**.
 5. Watch the participant's SSE progress stream move through: cloning →
