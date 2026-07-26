@@ -1,6 +1,5 @@
-"""ARQ job task definitions. generate_embeddings, recompute_rankings, and
-update_hackathon_stats are added in Phases 5 and 6 as their dependencies
-come online."""
+"""ARQ job task definitions. generate_embeddings is added in Phase 6 once
+the embedding pipeline exists."""
 
 import logging
 import time
@@ -24,6 +23,8 @@ from app.pipeline.file_processor import ProjectAnalysis, analyze_project
 from app.pipeline.ingestion import ingest_repository as clone_repo_to_disk
 from app.pipeline.progress import emit_progress
 from app.pipeline.static_analysis import StaticAnalysisReport, run_static_analysis
+from app.scoring.ranking_service import recompute_rankings_for_hackathon
+from app.scoring.stats_service import upsert_hackathon_stats
 
 logger = logging.getLogger("evalon.jobs")
 
@@ -199,6 +200,7 @@ async def run_evaluation_pipeline(ctx: dict, submission_id: str) -> None:
             "aggregation": None,
             "report": None,
         }
+        hackathon_id = submission.hackathon_id
         try:
             await graph.ainvoke(initial_state)
         except Exception as exc:  # noqa: BLE001 - top-level safety net; nodes should never raise, but a bug here must not crash the ARQ worker
@@ -210,3 +212,23 @@ async def run_evaluation_pipeline(ctx: dict, submission_id: str) -> None:
                 redis, submission_id, "error",
                 {"message": "An unexpected error occurred during evaluation.", "stage": "evaluating", "recoverable": True},
             )
+
+    # Deviates from the spec's literal linear job chain (run_evaluation_pipeline
+    # -> generate_embeddings -> recompute_rankings -> update_hackathon_stats):
+    # rankings/stats must never be blocked by embeddings (Phase 6) being slow,
+    # absent, or failed — they're dispatched directly here, independent of
+    # whether embedding generation later succeeds.
+    await ctx["redis"].enqueue_job("recompute_rankings", str(hackathon_id))
+    await ctx["redis"].enqueue_job("update_hackathon_stats", str(hackathon_id))
+
+
+async def recompute_rankings(ctx: dict, hackathon_id: str) -> None:
+    async with async_session_factory() as db:
+        await recompute_rankings_for_hackathon(db, uuid.UUID(hackathon_id))
+        await db.commit()
+
+
+async def update_hackathon_stats(ctx: dict, hackathon_id: str) -> None:
+    async with async_session_factory() as db:
+        await upsert_hackathon_stats(db, uuid.UUID(hackathon_id))
+        await db.commit()

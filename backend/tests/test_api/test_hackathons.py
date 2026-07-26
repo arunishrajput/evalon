@@ -165,3 +165,64 @@ async def test_invalid_status_transition_rejected(client: AsyncClient):
     )
     assert resp.status_code == 409
     assert resp.json()["error_code"] == "invalid_status_transition"
+
+
+async def test_finalize_requires_active_or_evaluating_status(client: AsyncClient):
+    admin_token = await _register_and_login(client, "admin7@example.com", as_admin=True)
+    create = await client.post(
+        "/hackathons", json={"title": "Finalize Draft Test"}, headers=_auth_headers(admin_token)
+    )
+    hackathon_id = create.json()["id"]  # still draft — never activated
+
+    resp = await client.post(f"/hackathons/{hackathon_id}/finalize", headers=_auth_headers(admin_token))
+
+    assert resp.status_code == 409
+    assert resp.json()["error_code"] == "invalid_status_transition"
+
+
+async def test_finalize_transitions_to_finalized_status(client: AsyncClient):
+    admin_token = await _register_and_login(client, "admin8@example.com", as_admin=True)
+    create = await client.post(
+        "/hackathons", json={"title": "Finalize Test"}, headers=_auth_headers(admin_token)
+    )
+    hackathon_id = create.json()["id"]
+    await client.patch(
+        f"/hackathons/{hackathon_id}/status", json={"status": "active"}, headers=_auth_headers(admin_token)
+    )
+
+    resp = await client.post(f"/hackathons/{hackathon_id}/finalize", headers=_auth_headers(admin_token))
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "finalized"
+
+
+async def test_only_owning_admin_can_finalize(client: AsyncClient):
+    owner_token = await _register_and_login(client, "owner2@example.com", as_admin=True)
+    other_token = await _register_and_login(client, "other2@example.com", as_admin=True)
+    create = await client.post(
+        "/hackathons", json={"title": "Owned Finalize"}, headers=_auth_headers(owner_token)
+    )
+    hackathon_id = create.json()["id"]
+    await client.patch(
+        f"/hackathons/{hackathon_id}/status", json={"status": "active"}, headers=_auth_headers(owner_token)
+    )
+
+    resp = await client.post(f"/hackathons/{hackathon_id}/finalize", headers=_auth_headers(other_token))
+
+    assert resp.status_code == 403
+
+
+async def test_list_submissions_requires_owning_admin(client: AsyncClient):
+    owner_token = await _register_and_login(client, "owner3@example.com", as_admin=True)
+    other_token = await _register_and_login(client, "other3@example.com", as_admin=True)
+    create = await client.post(
+        "/hackathons", json={"title": "Submissions List Test"}, headers=_auth_headers(owner_token)
+    )
+    hackathon_id = create.json()["id"]
+
+    ok = await client.get(f"/hackathons/{hackathon_id}/submissions", headers=_auth_headers(owner_token))
+    forbidden = await client.get(f"/hackathons/{hackathon_id}/submissions", headers=_auth_headers(other_token))
+
+    assert ok.status_code == 200
+    assert ok.json() == []
+    assert forbidden.status_code == 403

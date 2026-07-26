@@ -6,6 +6,7 @@ by `_load_owned_hackathon` below, not just a role check.
 """
 
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
@@ -17,6 +18,8 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_admin
 from app.models.criterion import Criterion
 from app.models.hackathon import Hackathon, HackathonParticipant, HackathonStatus
+from app.models.ranking import Ranking
+from app.models.submission import Submission
 from app.models.user import User
 from app.schemas.common import Page
 from app.schemas.hackathon import (
@@ -29,6 +32,8 @@ from app.schemas.hackathon import (
     HackathonUpdate,
     ParticipantRead,
 )
+from app.schemas.submission import SubmissionRead
+from app.scoring.ranking_service import recompute_rankings_for_hackathon
 
 router = APIRouter(prefix="/hackathons", tags=["hackathons"])
 
@@ -223,3 +228,45 @@ async def join_hackathon(
     await db.commit()
     await db.refresh(participant)
     return participant
+
+
+@router.get("/{hackathon_id}/submissions", response_model=list[SubmissionRead])
+async def list_hackathon_submissions(
+    hackathon: Hackathon = Depends(_load_owned_hackathon),
+    db: AsyncSession = Depends(get_db),
+) -> list[Submission]:
+    rows = await db.scalars(
+        select(Submission).where(Submission.hackathon_id == hackathon.id).order_by(Submission.submitted_at.desc())
+    )
+    return list(rows)
+
+
+_FINALIZABLE_STATUSES = {HackathonStatus.ACTIVE, HackathonStatus.EVALUATING}
+
+
+@router.post("/{hackathon_id}/finalize", response_model=HackathonRead)
+async def finalize_hackathon(
+    hackathon: Hackathon = Depends(_load_owned_hackathon),
+    admin: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+) -> Hackathon:
+    if hackathon.status not in _FINALIZABLE_STATUSES:
+        raise ConflictError(
+            f"Cannot finalize a hackathon in '{hackathon.status.value}' status", "invalid_status_transition"
+        )
+
+    # One last guaranteed-fresh pass before locking — any evaluation that
+    # completed moments ago must be reflected in the final leaderboard.
+    await recompute_rankings_for_hackathon(db, hackathon.id)
+
+    now = datetime.now(timezone.utc)
+    rankings = await db.scalars(select(Ranking).where(Ranking.hackathon_id == hackathon.id))
+    for ranking in rankings:
+        ranking.finalized = True
+        ranking.finalized_at = now
+        ranking.finalized_by = admin.id
+
+    hackathon.status = HackathonStatus.FINALIZED
+    await db.commit()
+    await db.refresh(hackathon)
+    return hackathon

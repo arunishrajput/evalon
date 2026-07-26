@@ -73,6 +73,7 @@ async def create_submission(
 
     pool = await get_arq_pool()
     await pool.enqueue_job("ingest_repository", str(submission.id))
+    await pool.enqueue_job("update_hackathon_stats", str(payload.hackathon_id))
 
     return submission
 
