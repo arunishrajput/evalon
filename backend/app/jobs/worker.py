@@ -5,13 +5,13 @@ generate_embeddings/recompute_rankings/update_hackathon_stats (Phase 5/6)."""
 from arq.connections import RedisSettings
 
 from app.config import get_settings
-from app.jobs.tasks import ingest_repository, ping
+from app.jobs.tasks import ingest_repository, ping, run_evaluation_pipeline
 
 settings = get_settings()
 
 
 class WorkerSettings:
-    functions: list = [ping, ingest_repository]
+    functions: list = [ping, ingest_repository, run_evaluation_pipeline]
     redis_settings = RedisSettings(host=settings.redis_host, port=settings.redis_port)
     max_jobs = 3  # prevents simultaneous model loads (see ModelQueueManager)
     job_timeout = 900

@@ -3,15 +3,22 @@ update_hackathon_stats are added in Phases 5 and 6 as their dependencies
 come online."""
 
 import logging
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sqlalchemy import select
+
+from app.agents.llm_provider import LLMProvider
 from app.config import get_settings
 from app.core.exceptions import RepositoryIngestionError
 from app.database import async_session_factory
-from app.dependencies import get_redis
+from app.dependencies import get_model_queue_manager, get_redis
+from app.models.criterion import Criterion
 from app.models.submission import Submission, SubmissionStatus
+from app.orchestration.graph import build_graph
+from app.orchestration.nodes import PipelineContext
 from app.pipeline.analysis_cache import cache_analysis_result
 from app.pipeline.file_processor import ProjectAnalysis, analyze_project
 from app.pipeline.ingestion import ingest_repository as clone_repo_to_disk
@@ -48,6 +55,7 @@ async def ingest_repository(ctx: dict, submission_id: str) -> None:
             project, static_report = await _run_analysis_stages(db, redis, submission, repo_path)
             await cache_analysis_result(redis, submission_id, project, static_report)
             await _emit_analysis_complete(redis, submission_id, static_report)
+            await ctx["redis"].enqueue_job("run_evaluation_pipeline", submission_id)
         except RepositoryIngestionError as exc:
             await _fail_submission(db, redis, submission, exc.message, stage="cloning")
         except Exception as exc:  # noqa: BLE001 - a job crash must never propagate as an unhandled task failure
@@ -149,3 +157,56 @@ async def _fail_submission(db, redis, submission: Submission, message: str, *, s
     await emit_progress(
         redis, str(submission.id), "error", {"message": message, "stage": stage, "recoverable": False}
     )
+
+
+async def run_evaluation_pipeline(ctx: dict, submission_id: str) -> None:
+    """Stage 4-8: the sequential LangGraph evaluation (spec Section 7). Every
+    node in the graph is independently fault-tolerant by construction — this
+    top-level try/except is a last-resort safety net for a genuine bug in
+    the orchestration layer itself, not the expected failure path."""
+    settings = get_settings()
+    redis = get_redis()
+    model_queue = get_model_queue_manager()
+
+    async with async_session_factory() as db:
+        submission = await db.get(Submission, uuid.UUID(submission_id))
+        if submission is None:
+            logger.error("run_evaluation_pipeline: submission %s not found", submission_id)
+            return
+
+        criteria = list(
+            await db.scalars(select(Criterion).where(Criterion.hackathon_id == submission.hackathon_id))
+        )
+        pipeline_ctx = PipelineContext(
+            db=db,
+            redis=redis,
+            model_queue=model_queue,
+            llm=LLMProvider(settings),
+            settings=settings,
+            criteria=criteria,
+        )
+        graph = build_graph(pipeline_ctx)
+
+        initial_state = {
+            "submission_id": submission_id,
+            "hackathon_id": str(submission.hackathon_id),
+            "repo_context": None,
+            "agent_results": {},
+            "errors": [],
+            "completed_agents": [],
+            "model_lock_acquired": False,
+            "pipeline_start_time": time.monotonic(),
+            "aggregation": None,
+            "report": None,
+        }
+        try:
+            await graph.ainvoke(initial_state)
+        except Exception as exc:  # noqa: BLE001 - top-level safety net; nodes should never raise, but a bug here must not crash the ARQ worker
+            logger.error("run_evaluation_pipeline crashed for %s: %s", submission_id, exc, exc_info=True)
+            submission.status = SubmissionStatus.FAILED
+            submission.error_message = "An unexpected error occurred during evaluation."
+            await db.commit()
+            await emit_progress(
+                redis, submission_id, "error",
+                {"message": "An unexpected error occurred during evaluation.", "stage": "evaluating", "recoverable": True},
+            )

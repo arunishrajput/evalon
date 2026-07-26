@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import StreamingResponse
 
+from app.api.v1.submission_access import get_submission_or_404, require_owner_or_admin
 from app.config import Settings, get_settings
 from app.core.exceptions import AuthorizationError, ConflictError, NotFoundError
 from app.database import get_db
@@ -30,18 +31,6 @@ _WITHDRAWABLE_STATUSES = {
     SubmissionStatus.ANALYZING,
     SubmissionStatus.FAILED,
 }
-
-
-async def _get_submission_or_404(submission_id: uuid.UUID, db: AsyncSession) -> Submission:
-    submission = await db.get(Submission, submission_id)
-    if submission is None:
-        raise NotFoundError("Submission not found")
-    return submission
-
-
-def _require_owner_or_admin(submission: Submission, user: User) -> None:
-    if submission.user_id != user.id and user.role.value != "admin":
-        raise AuthorizationError("You do not have access to this submission")
 
 
 @router.post("", response_model=SubmissionRead, status_code=201)
@@ -94,8 +83,8 @@ async def get_submission(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Submission:
-    submission = await _get_submission_or_404(submission_id, db)
-    _require_owner_or_admin(submission, user)
+    submission = await get_submission_or_404(submission_id, db)
+    require_owner_or_admin(submission, user)
     return submission
 
 
@@ -106,8 +95,8 @@ async def stream_submission_status(
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ) -> StreamingResponse:
-    submission = await _get_submission_or_404(submission_id, db)
-    _require_owner_or_admin(submission, user)
+    submission = await get_submission_or_404(submission_id, db)
+    require_owner_or_admin(submission, user)
     return StreamingResponse(
         stream_progress(redis, str(submission_id)),
         media_type="text/event-stream",
@@ -121,7 +110,7 @@ async def withdraw_submission(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    submission = await _get_submission_or_404(submission_id, db)
+    submission = await get_submission_or_404(submission_id, db)
     if submission.user_id != user.id:
         raise AuthorizationError("Only the submitting participant can withdraw a submission")
     if submission.status not in _WITHDRAWABLE_STATUSES:
