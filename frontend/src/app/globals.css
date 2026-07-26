@@ -16,5 +16,23 @@ body {
   color: #e5e7eb;
 }
 
-/* Full print stylesheet (nav/sidebar hiding, report expansion, EVALON header,
-   page breaks) lands in Phase 7 alongside PrintableReport.tsx. */
+/* Print stylesheet (spec Section 10): navbar/sidebar/chat/progress-stream
+   are hidden via each component's own `print:hidden` class; PrintableReport
+   (hidden in normal view) becomes the only visible content, on a light
+   background for print readability. Radar chart SVGs render natively under
+   print without extra handling — Recharts' SVG output isn't screen-only. */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+
+  #printable-report {
+    color: #111111;
+  }
+
+  @page {
+    size: A4;
+    margin: 16mm 14mm;
+  }
+}
