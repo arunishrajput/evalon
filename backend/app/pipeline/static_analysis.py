@@ -63,12 +63,26 @@ class DocumentationCoverage(BaseModel):
         return self.documented / self.total if self.total else 0.0
 
 
+class ErrorHandlingCoverage(BaseModel):
+    """Functions containing a try/except (Python, exact via AST) or try/catch
+    (JS/TS, heuristic via regex count) out of total functions detected —
+    the Code Quality Agent's deterministic "error handling" sub-score."""
+
+    functions_with_handling: int = 0
+    total_functions: int = 0
+
+    @property
+    def ratio(self) -> float:
+        return self.functions_with_handling / self.total_functions if self.total_functions else 0.0
+
+
 class StaticAnalysisReport(BaseModel):
     radon: RadonReport = RadonReport()
     semgrep_findings: list[LintFinding] = []
     eslint_findings: list[LintFinding] = []
     file_structure: FileStructureReport = FileStructureReport()
     documentation_coverage: DocumentationCoverage = DocumentationCoverage()
+    error_handling: ErrorHandlingCoverage = ErrorHandlingCoverage()
     errors: list[str] = []
 
 
@@ -264,6 +278,47 @@ def _js_doc_coverage(js_files: list[FileEntry]) -> tuple[int, int]:
     return documented, total
 
 
+# --- error handling coverage ---
+
+
+def _python_error_handling_ratio(python_files: list[FileEntry]) -> tuple[int, int]:
+    with_handling = total = 0
+    for entry in python_files:
+        source = read_text_file_safe(entry.absolute_path)
+        if not source:
+            continue
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                total += 1
+                if any(isinstance(inner, ast.Try) for inner in ast.walk(node)):
+                    with_handling += 1
+    return with_handling, total
+
+
+_TRY_CATCH_PATTERN = re.compile(r"\btry\s*{")
+_JS_FUNCTION_DECL_PATTERN = re.compile(r"\bfunction\s+\w+\s*\(|=>\s*{")
+
+
+def _js_error_handling_ratio(js_files: list[FileEntry]) -> tuple[int, int]:
+    """Coarse heuristic (aggregate try-block count vs. function-like
+    declaration count per file, not a true per-function correlation) — same
+    tier of approximation as the JSDoc coverage heuristic above."""
+    with_handling = total = 0
+    for entry in js_files:
+        source = read_text_file_safe(entry.absolute_path)
+        if not source:
+            continue
+        file_functions = len(_JS_FUNCTION_DECL_PATTERN.findall(source))
+        file_try_blocks = len(_TRY_CATCH_PATTERN.findall(source))
+        total += file_functions
+        with_handling += min(file_try_blocks, file_functions)
+    return with_handling, total
+
+
 # --- orchestration ---
 
 
@@ -302,6 +357,9 @@ async def run_static_analysis(root: Path, files: list[FileEntry]) -> StaticAnaly
     py_documented, py_total = _python_doc_coverage(python_files)
     js_documented, js_total = _js_doc_coverage(js_files + ts_files)
 
+    py_handling, py_functions = _python_error_handling_ratio(python_files)
+    js_handling, js_functions = _js_error_handling_ratio(js_files + ts_files)
+
     return StaticAnalysisReport(
         radon=radon_report,
         semgrep_findings=semgrep_findings,
@@ -309,6 +367,9 @@ async def run_static_analysis(root: Path, files: list[FileEntry]) -> StaticAnaly
         file_structure=_analyze_file_structure(files),
         documentation_coverage=DocumentationCoverage(
             documented=py_documented + js_documented, total=py_total + js_total
+        ),
+        error_handling=ErrorHandlingCoverage(
+            functions_with_handling=py_handling + js_handling, total_functions=py_functions + js_functions
         ),
         errors=errors,
     )
